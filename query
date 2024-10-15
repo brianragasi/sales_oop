@@ -1,0 +1,168 @@
+1. User Authentication
+User Registration (register.php):
+INSERT INTO users (name, email, password) VALUES ('$name', '$email', '$password')
+
+SQL
+This query inserts a new user into the users table.
+$name, $email, and $password are variables containing the user's registration details. The password should be hashed before insertion.
+User Login (login.php):
+SELECT * FROM users WHERE email = '$email'
+
+SQL
+This query retrieves the user record based on the provided email.
+The PHP code then verifies the provided password against the hashed password from the database using password_verify().
+Check if Email Exists (register.php)
+SELECT * FROM users WHERE email = '$email'
+
+SQL
+This query checks if an email already exists in the users table during registration.
+2. Product Browsing & Management
+Display All Products (products.php):
+SELECT * FROM products
+
+SQL
+Retrieves all products from the products table.
+Display Featured Products (index.php):
+SELECT * FROM products WHERE featured = 1
+
+SQL
+Selects products marked as "featured" in the products table.
+Get Product Details (product_details.php):
+SELECT * FROM products WHERE id = '$productId'
+
+SQL
+Fetches details of a specific product based on its ID.
+Get Product Reviews (product_details.php):
+SELECT r.*, u.name AS user_name
+FROM reviews r
+JOIN users u ON r.user_id = u.id
+WHERE r.product_id = '$productId'
+ORDER BY r.review_date DESC
+
+SQL
+This query retrieves reviews for a given product, including the reviewer's name, and orders them by date (newest first).
+Add New Product (add_product.php):
+INSERT INTO products (name, description, price, quantity, image) 
+VALUES (?, ?, ?, ?, ?)
+
+SQL
+Inserts a new product into the products table. The question marks are placeholders for the product data, which are bound using prepared statements.
+Update Product (edit_product.php):
+UPDATE products 
+SET name = ?, description = ?, price = ?, quantity = ?, image = ?  
+WHERE id = ?
+
+SQL
+Updates an existing product's information.
+Delete Product (manage_products.php - AJAX):
+DELETE FROM products WHERE id = ?
+
+SQL
+Deletes a product from the products table based on its ID.
+Important: This action should ideally be done within a transaction to ensure the consistency of related data in order_items. You also likely need to handle the associated image deletion from your server.
+Set Product as Featured/Unfeatured (manage_products.php - AJAX):
+UPDATE products SET featured = ? WHERE id = ?
+
+SQL
+Toggles the featured status of a product.
+3. Cart Management (Mostly PHP Sessions)
+The cart functionality primarily uses PHP sessions ($_SESSION['cart']) to store and manage the cart items. There are no direct SQL queries involved in adding, updating, or removing items from the cart.
+4. Order Processing
+Create Order (checkout.php, Order.php):
+INSERT INTO orders (user_id, customer_email, final_total, payment_method, address, order_type, pickup_time, delivery_address)
+VALUES ('$userId', '$customerEmail', '$finalTotal', '$paymentMethod', '$address', '$orderType', '$pickupTime', '$deliveryAddress')
+
+// And for each item in the cart:
+INSERT INTO order_items (order_id, product_id, quantity) 
+VALUES ('$orderId', '$productId', '$quantity')
+
+UPDATE products SET quantity = quantity - '$quantity' WHERE id = '$productId'
+
+SQL
+Inserts a new order into the orders table.
+Inserts items into the order_items table, linking products to the order.
+Decreases the quantity of ordered products in the products table.
+Get User's Orders (profile.php):
+SELECT o.id, o.final_total, o.payment_method, 
+    CASE 
+        WHEN o.order_type = 'delivery' THEN o.delivery_address
+        ELSE o.address 
+    END AS address,
+    o.status, o.order_date,
+    GROUP_CONCAT(p.name SEPARATOR ', ') AS product_names,
+    SUM(oi.quantity) AS total_quantity 
+FROM orders o
+JOIN order_items oi ON o.id = oi.order_id
+JOIN products p ON oi.product_id = p.id
+WHERE o.user_id = '$userId'
+GROUP BY o.id
+ORDER BY o.order_date DESC
+
+SQL
+This query retrieves all orders for a specific user, including order details, product names in each order, total quantity, and order date.
+Get Order Details (order_confirmation.php, Order.php):
+SELECT o.*, 
+    p.name AS product_name, 
+    p.price AS product_price,
+    oi.quantity AS item_quantity,
+    o.pickup_time,
+    o.delivery_address, 
+    o.final_total AS final_total 
+FROM orders o
+INNER JOIN order_items oi ON o.id = oi.order_id
+INNER JOIN products p ON oi.product_id = p.id 
+WHERE o.id = ? 
+GROUP BY o.id
+Use code with caution.
+SQL
+Fetches detailed information about a specific order, including product details and quantities.
+Update Order Status (manage_orders.php):
+UPDATE orders SET status = '$newStatus' WHERE id = '$orderId'
+
+SQL
+Changes the status of an order (e.g., 'pending', 'processing', 'shipped', 'delivered', 'cancelled').
+Delete Order (manage_orders.php, admin-order-actions.php):
+DELETE FROM order_items WHERE order_id = '$orderId' 
+DELETE FROM orders WHERE id = '$orderId'
+
+SQL
+Important: These DELETE statements are typically executed within a transaction to maintain data consistency. Delete order items first, then the order itself.
+Cancel Order (cancel_order.php):
+UPDATE orders SET status = 'cancelled' WHERE id = ? 
+
+// (within a loop for each item in the cancelled order):
+UPDATE products SET quantity = quantity + ? WHERE id = ?
+
+SQL
+Sets the order status to 'cancelled'.
+Increases the product quantity back in the products table to reflect the cancellation.
+5. Review Submission
+Submit Review (review-handler.php):
+INSERT INTO reviews (user_id, product_id, rating, review) 
+VALUES (?, ?, ?, ?)
+
+SQL
+Inserts a new review into the reviews table.
+6. Sales Report
+Weekly or Monthly Sales Report (admin_dashboard.php):
+// Weekly:
+SELECT p.name, SUM(oi.quantity) AS total_quantity_sold, SUM(oi.quantity * p.price) AS total_sales_value
+FROM order_items oi
+JOIN orders o ON oi.order_id = o.id
+JOIN products p ON oi.product_id = p.id
+WHERE o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 WEEK) AND o.status = 'delivered' 
+GROUP BY p.id
+ORDER BY total_sales_value DESC
+
+// Monthly:
+// ... similar to weekly but with `INTERVAL 1 MONTH`
+
+SQL
+Calculates the total quantity sold and total sales value for each product within the specified time period (weekly or monthly).
+Only includes orders with a 'delivered' status.
+7. Low Stock Products Report
+Get Low Stock Products (AdminProduct.php, admin_dashboard.php):
+SELECT * FROM products WHERE quantity <= ?
+
+SQL
+Retrieves products with a quantity at or below a given threshold.
